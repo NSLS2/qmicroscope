@@ -1,5 +1,7 @@
 import sys
-
+import argparse
+from pathlib import Path
+import yaml
 from qtpy.QtCore import (
     QPoint,
     QSettings,
@@ -64,6 +66,16 @@ class Form(QMainWindow):
 
         # Read the settings and persist them
         settings = QSettings("NSLS2", "main")
+        root = {}
+        for full_key in settings.allKeys():
+            parts = full_key.split('/')
+            cursor = root
+            for part in parts[:-1]:
+                cursor = cursor.setdefault(part, {})
+            cursor[parts[-1]] = settings.value(full_key)
+
+        # ---- 2) YAML-encode and print ----
+        yaml.safe_dump(root, stream=sys.stdout, sort_keys=False, default_flow_style=False)
         self.readSettings(settings)
 
         self.settingsDialog = Settings(self)
@@ -109,13 +121,33 @@ class Form(QMainWindow):
         self.container.writeSettings(settings)
         settings.endGroup()
 
+def overlay_yaml(settings_obj, yaml_file):
+    with open(yaml_file, encoding='utf-8') as f:
+        def walk(prefix, node):
+            if isinstance(node, dict):
+                for k, v in node.items():
+                    walk(f"{prefix}/{k}" if prefix else k, v)
+            else:
+                settings_obj.setValue(prefix, node)
+        walk("", yaml.safe_load(f) or {})
 
 if __name__ == "__main__":
+    p = argparse.ArgumentParser()
+    p.add_argument("--settings", help="YAML file to override settings")
+    p.add_argument("--persist", action="store_true", help="Overrides profile settings")
+    args = p.parse_args()
+
     # Set up some application basics for saving settings
     QApplication.setOrganizationName("BNL")
     QApplication.setOrganizationDomain("bnl.gov")
     QApplication.setApplicationName("QCamera")
 
+    settings = QSettings()
+
+    if args.settings:
+        overlay_yaml(settings, Path(args.settings).expanduser())
+        if args.persist:
+            settings.sync()
     # Create the Qt Application
     app = QApplication(sys.argv)
 
