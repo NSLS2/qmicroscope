@@ -1,13 +1,13 @@
 import sys
 import argparse
-from pathlib import Path
+from pathlib import Path, PosixPath
 import yaml
 from qtpy.QtCore import (
     QPoint,
     QSettings,
     QSize,
 )
-
+from qtpy.QtGui import QColor
 from qtpy.QtWidgets import (
     QCheckBox,
     QLineEdit,
@@ -19,6 +19,8 @@ from qtpy.QtWidgets import (
     QSpinBox,
     QMainWindow,
     QWidget,
+    QFileDialog,
+    QMessageBox,
 )
 
 from qmicroscope.microscope import Microscope
@@ -40,6 +42,7 @@ class Form(QMainWindow):
 
         self.startButton = QPushButton("Start")
         self.settingsButton = QPushButton("Settings")
+        self.saveSettingsButton = QPushButton("Save Settings")
 
         # Create layout and add widgets
         layout = QVBoxLayout()
@@ -47,6 +50,7 @@ class Form(QMainWindow):
         hButtonBox.addStretch()
         hButtonBox.addWidget(self.startButton)
         hButtonBox.addWidget(self.settingsButton)
+        hButtonBox.addWidget(self.saveSettingsButton)
         hButtonBox.addStretch()
         layout.addLayout(hButtonBox)
         layout.addWidget(self.container)
@@ -59,6 +63,7 @@ class Form(QMainWindow):
         # Add button signal to slot to start/stop
         self.startButton.clicked.connect(self.startButtonPressed)
         self.settingsButton.clicked.connect(self.settingsButtonClicked)
+        self.saveSettingsButton.clicked.connect(self.saveSettingsButtonClicked)
 
         # Connect to the microscope ROI clicked signal
         if self.microscope:
@@ -66,6 +71,57 @@ class Form(QMainWindow):
 
         # Read the settings and persist them
         settings = QSettings("NSLS2", "main")
+
+
+        # ── 1. Dumper → Python → YAML ──────────────────────────────────────────────────
+        def qpoint_representer(dumper, data: QPoint):
+            # Emit a YAML *sequence* tagged as !QPoint, e.g.   !QPoint [10, 20]
+            return dumper.represent_sequence('!QPoint', [data.x(), data.y()])
+
+        def qsize_representer(dumper, data: QSize):
+            # Emit !QSize [width, height]
+            return dumper.represent_sequence('!QSize', [data.width(), data.height()])
+
+        def path_representer(dumper, data: Path):
+            return dumper.represent_scalar('!Path', str(data))
+
+        def qcolor_representer(dumper, data: QColor):
+            # tag name can be anything; keep it short
+            return dumper.represent_scalar('!QColor', data.name())
+
+        yaml.SafeDumper.add_representer(QColor, qcolor_representer)
+        yaml.SafeDumper.add_representer(QPoint, qpoint_representer)
+        yaml.SafeDumper.add_representer(QSize,  qsize_representer)
+        yaml.SafeDumper.add_representer(PosixPath, path_representer)
+
+        # ── 2. Loader ← YAML ← Python ──────────────────────────────────────────────────
+        def qpoint_constructor(loader, node):
+            x, y = loader.construct_sequence(node)
+            return QPoint(int(x), int(y))
+
+        def qsize_constructor(loader, node):
+            w, h = loader.construct_sequence(node)
+            return QSize(int(w), int(h))
+
+        def path_constructor(loader, node):
+            path, = loader.construct_scalar(node)
+            return Path(path)
+
+        def qcolor_constructor(loader, node):
+            value = loader.construct_scalar(node)
+            return QColor(value)
+        yaml.SafeLoader.add_constructor('!QPoint', qpoint_constructor)
+        yaml.SafeLoader.add_constructor('!QSize',  qsize_constructor)
+        yaml.SafeLoader.add_constructor('!Path',  path_constructor)
+        yaml.SafeLoader.add_constructor('!QColor', qcolor_constructor)
+        root = self.parse_settings(settings)
+        yaml.safe_dump(root, stream=sys.stdout, sort_keys=False, default_flow_style=False)
+        self.readSettings(settings)
+
+        self.settingsDialog = Settings(self)
+        self.settingsDialog.setContainer(self.container)
+
+    def parse_settings(self, settings) -> dict:
         root = {}
         for full_key in settings.allKeys():
             parts = full_key.split('/')
@@ -73,18 +129,12 @@ class Form(QMainWindow):
             for part in parts[:-1]:
                 cursor = cursor.setdefault(part, {})
             cursor[parts[-1]] = settings.value(full_key)
-
-        # ---- 2) YAML-encode and print ----
-        yaml.safe_dump(root, stream=sys.stdout, sort_keys=False, default_flow_style=False)
-        self.readSettings(settings)
-
-        self.settingsDialog = Settings(self)
-        self.settingsDialog.setContainer(self.container)
+        return root
 
     # event : QCloseEvent
     def closeEvent(self, event):
         settings = QSettings("NSLS2", "main")
-        self.writeSettings(settings)
+        # self.writeSettings(settings)
         self.container.start(False)
         event.accept()
 
@@ -102,6 +152,24 @@ class Form(QMainWindow):
         # Open the settings dialog.
         self.settingsDialog.show()
 
+    def saveSettingsButtonClicked(self):
+        dialog = QFileDialog(self)
+        filename, _ = dialog.getSaveFileName(
+                        self,
+                        "Export settings as YAML",
+                        str(Path.home() / "settings.yaml"),
+                        "YAML files (*.yaml *.yml);;All files (*)"
+        )
+        if filename:
+            try:
+                data = self.parse_settings(QSettings("NSLS2", "main"))
+                yaml_str = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
+                Path(filename).write_text(yaml_str, encoding='utf-8')
+                QMessageBox.information(self, "Export complete",
+                                         f"Settings written to:\n{filename}")
+            except Exception as e:
+                QMessageBox.critical(self, "Export failed", str(e))
+    
     def onRoiClicked(self, x, y):
         print(f"ROI: {x}, {y}")
 
