@@ -193,6 +193,7 @@ def setup_yaml_parser():
     yaml.SafeLoader.add_constructor('!QColor', qcolor_constructor)
 
 def overlay_yaml(settings_obj, yaml_file):
+    settings_obj.clear()
     with open(yaml_file, encoding='utf-8') as f:
         def walk(prefix, node):
             if isinstance(node, dict):
