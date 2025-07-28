@@ -72,54 +72,15 @@ class Form(QMainWindow):
         # Read the settings and persist them
         settings = QSettings("NSLS2", "main")
 
-
-        # ── 1. Dumper → Python → YAML ──────────────────────────────────────────────────
-        def qpoint_representer(dumper, data: QPoint):
-            # Emit a YAML *sequence* tagged as !QPoint, e.g.   !QPoint [10, 20]
-            return dumper.represent_sequence('!QPoint', [data.x(), data.y()])
-
-        def qsize_representer(dumper, data: QSize):
-            # Emit !QSize [width, height]
-            return dumper.represent_sequence('!QSize', [data.width(), data.height()])
-
-        def path_representer(dumper, data: Path):
-            return dumper.represent_scalar('!Path', str(data))
-
-        def qcolor_representer(dumper, data: QColor):
-            # tag name can be anything; keep it short
-            return dumper.represent_scalar('!QColor', data.name())
-
-        yaml.SafeDumper.add_representer(QColor, qcolor_representer)
-        yaml.SafeDumper.add_representer(QPoint, qpoint_representer)
-        yaml.SafeDumper.add_representer(QSize,  qsize_representer)
-        yaml.SafeDumper.add_representer(PosixPath, path_representer)
-
-        # ── 2. Loader ← YAML ← Python ──────────────────────────────────────────────────
-        def qpoint_constructor(loader, node):
-            x, y = loader.construct_sequence(node)
-            return QPoint(int(x), int(y))
-
-        def qsize_constructor(loader, node):
-            w, h = loader.construct_sequence(node)
-            return QSize(int(w), int(h))
-
-        def path_constructor(loader, node):
-            path, = loader.construct_scalar(node)
-            return Path(path)
-
-        def qcolor_constructor(loader, node):
-            value = loader.construct_scalar(node)
-            return QColor(value)
-        yaml.SafeLoader.add_constructor('!QPoint', qpoint_constructor)
-        yaml.SafeLoader.add_constructor('!QSize',  qsize_constructor)
-        yaml.SafeLoader.add_constructor('!Path',  path_constructor)
-        yaml.SafeLoader.add_constructor('!QColor', qcolor_constructor)
         root = self.parse_settings(settings)
         yaml.safe_dump(root, stream=sys.stdout, sort_keys=False, default_flow_style=False)
         self.readSettings(settings)
 
         self.settingsDialog = Settings(self)
         self.settingsDialog.setContainer(self.container)
+
+
+        
 
     def parse_settings(self, settings) -> dict:
         root = {}
@@ -189,6 +150,50 @@ class Form(QMainWindow):
         self.container.writeSettings(settings)
         settings.endGroup()
 
+
+def setup_yaml_parser():
+    # ── 1. Dumper → Python → YAML ──────────────────────────────────────────────────
+    def qpoint_representer(dumper, data: QPoint):
+        # Emit a YAML *sequence* tagged as !QPoint, e.g.   !QPoint [10, 20]
+        return dumper.represent_sequence('!QPoint', [data.x(), data.y()])
+
+    def qsize_representer(dumper, data: QSize):
+        # Emit !QSize [width, height]
+        return dumper.represent_sequence('!QSize', [data.width(), data.height()])
+
+    def path_representer(dumper, data: Path):
+        return dumper.represent_scalar('!Path', str(data))
+
+    def qcolor_representer(dumper, data: QColor):
+        # tag name can be anything; keep it short
+        return dumper.represent_scalar('!QColor', data.name())
+
+    yaml.SafeDumper.add_representer(QColor, qcolor_representer)
+    yaml.SafeDumper.add_representer(QPoint, qpoint_representer)
+    yaml.SafeDumper.add_representer(QSize,  qsize_representer)
+    yaml.SafeDumper.add_representer(PosixPath, path_representer)
+
+    # ── 2. Loader ← YAML ← Python ──────────────────────────────────────────────────
+    def qpoint_constructor(loader, node):
+        x, y = loader.construct_sequence(node)
+        return QPoint(int(x), int(y))
+
+    def qsize_constructor(loader, node):
+        w, h = loader.construct_sequence(node)
+        return QSize(int(w), int(h))
+
+    def path_constructor(loader, node):
+        path = loader.construct_scalar(node)
+        return Path(path)
+
+    def qcolor_constructor(loader, node):
+        value = loader.construct_scalar(node)
+        return QColor(value)
+    yaml.SafeLoader.add_constructor('!QPoint', qpoint_constructor)
+    yaml.SafeLoader.add_constructor('!QSize',  qsize_constructor)
+    yaml.SafeLoader.add_constructor('!Path',  path_constructor)
+    yaml.SafeLoader.add_constructor('!QColor', qcolor_constructor)
+
 def overlay_yaml(settings_obj, yaml_file):
     with open(yaml_file, encoding='utf-8') as f:
         def walk(prefix, node):
@@ -200,6 +205,7 @@ def overlay_yaml(settings_obj, yaml_file):
         walk("", yaml.safe_load(f) or {})
 
 if __name__ == "__main__":
+    setup_yaml_parser()
     p = argparse.ArgumentParser()
     p.add_argument("--settings", help="YAML file to override settings")
     p.add_argument("--persist", action="store_true", help="Overrides profile settings")
