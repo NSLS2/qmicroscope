@@ -30,7 +30,7 @@ from qmicroscope.plugins.record_plugin import RecordPlugin
 from qmicroscope.plugins.c2c_plugin import C2CPlugin
 
 class Form(QMainWindow):
-    def __init__(self, parent=None):
+    def __init__(self, settings=None, parent=None):
         super(Form, self).__init__(parent)
         # Create widgets
         self.setWindowTitle("NSLS-II Microscope Widget")
@@ -70,7 +70,8 @@ class Form(QMainWindow):
             self.microscope.roiClicked.connect(self.onRoiClicked)
 
         # Read the settings and persist them
-        settings = QSettings("NSLS2", "main")
+        if settings is None:
+            settings = QSettings("NSLS2", "main")
 
         root = self.parse_settings(settings)
         yaml.safe_dump(root, stream=sys.stdout, sort_keys=False, default_flow_style=False)
@@ -78,9 +79,6 @@ class Form(QMainWindow):
 
         self.settingsDialog = Settings(self)
         self.settingsDialog.setContainer(self.container)
-
-
-        
 
     def parse_settings(self, settings) -> dict:
         root = {}
@@ -201,6 +199,7 @@ def overlay_yaml(settings_obj, yaml_file):
                 for k, v in node.items():
                     walk(f"{prefix}/{k}" if prefix else k, v)
             else:
+                print(f"Setting value: {prefix} : {node}")
                 settings_obj.setValue(prefix, node)
         walk("", yaml.safe_load(f) or {})
 
@@ -226,7 +225,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
 
     # Create and show the form
-    form = Form()
+    form = Form(settings=settings)
     form.show()
 
     # Run the main Qt loop
