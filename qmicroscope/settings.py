@@ -101,6 +101,7 @@ class Settings(QDialog):
 
     def okClicked(self):
         self.updateMicroscope()
+        self.parent().writeSettings(self.parent().settings)
         self.accept()
 
     def applyClicked(self):

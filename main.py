@@ -39,7 +39,7 @@ class Form(QMainWindow):
         self.container.size = [2, 2]
         self.microscope = self.container.microscope(0)
         # self.microscope = Microscope(self)
-
+        self.settings = settings
         self.startButton = QPushButton("Start")
         self.settingsButton = QPushButton("Settings")
         self.saveSettingsButton = QPushButton("Save Settings")
@@ -70,8 +70,8 @@ class Form(QMainWindow):
             self.microscope.roiClicked.connect(self.onRoiClicked)
 
         # Read the settings and persist them
-        if settings is None:
-            settings = QSettings("NSLS2", "main")
+        if self.settings is None:
+            self.settings = QSettings("NSLS2", "main")
 
         root = self.parse_settings(settings)
         yaml.safe_dump(root, stream=sys.stdout, sort_keys=False, default_flow_style=False)
@@ -83,6 +83,7 @@ class Form(QMainWindow):
     def parse_settings(self, settings) -> dict:
         root = {}
         for full_key in settings.allKeys():
+            print(full_key)
             parts = full_key.split('/')
             cursor = root
             for part in parts[:-1]:
@@ -121,7 +122,8 @@ class Form(QMainWindow):
         )
         if filename:
             try:
-                data = self.parse_settings(QSettings("NSLS2", "main"))
+                data = self.parse_settings(self.settings)
+                # data = self.parse_settings(QSettings("NSLS2", "main"))
                 yaml_str = yaml.safe_dump(data, sort_keys=False, default_flow_style=False)
                 Path(filename).write_text(yaml_str, encoding='utf-8')
                 QMessageBox.information(self, "Export complete",
@@ -216,8 +218,8 @@ if __name__ == "__main__":
     QApplication.setOrganizationDomain("bnl.gov")
     QApplication.setApplicationName("QCamera")
 
-    settings = QSettings()
-
+    # settings = QSettings()
+    settings = QSettings("NSLS2", "main")
     if args.settings:
         overlay_yaml(settings, Path(args.settings).expanduser())
         if args.persist:
