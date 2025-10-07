@@ -91,10 +91,10 @@ class Microscope(QWidget):
         self.view.installEventFilter(self)
 
     def updatedImageSize(self) -> None:
-        if self.image.size() != self.minimumSize():
-            self.setMinimumSize(self.image.size())
+        if self.pixmap.pixmap().size() != self.minimumSize():
+            self.setMinimumSize(self.pixmap.pixmap().size())
             self.center = QPoint(
-                int(self.image.size().width() / 2), int(self.image.size().height() / 2)
+                int(self.pixmap.pixmap().size().width() / 2), int(self.pixmap.pixmap().size().height() / 2)
             )
 
     def acquire(self, start: bool = True) -> None:
@@ -206,31 +206,30 @@ class Microscope(QWidget):
             if plugin.updates_image:
                 self.image = plugin.update_image_data(self.image)
 
-        if len(self.scale) == 2:
-            if self.scale[0] > 0:
-                self.image = self.image.scaledToWidth(self.scale[0])
-            elif self.scale[1] > 0:
-                self.image = self.image.scaledToHeight(self.scale[1])
-
-        self.updatedImageSize()
-        # self.view.setFixedSize(self.image.size())
         pixmap = QPixmap.fromImage(self.image)
         self.pixmap.setPixmap(pixmap)
+        self.resizeImage()
+        self.updatedImageSize()
         self.scene.setSceneRect(self.pixmap.boundingRect())
-        rect = self.image.rect()
-        ht = self.image.rect().height()
-        wd = self.image.rect().width()
+        rect = self.pixmap.pixmap().rect()
+        ht = self.pixmap.pixmap().rect().height()
+        wd = self.pixmap.pixmap().rect().width()
         rect.setHeight(ht + 2)
         rect.setWidth(wd + 2)
         self.view.setGeometry(rect)
         self.update()
 
     def resizeImage(self):
-        if len(self.scale) == 2:
-            if self.scale[0] > 0:
-                self.image = self.image.scaledToWidth(self.scale[0])
-            elif self.scale[1] > 0:
-                self.image = self.image.scaledToHeight(self.scale[1])
+        try:
+            if len(self.scale) == 2:
+                if self.scale[0] > 0:
+                    # self.image = self.image.scaledToWidth(self.scale[0])
+                    self.pixmap.pixmap().scaledToWidth(self.scale[0])
+                elif self.scale[1] > 0:
+                    self.pixmap.pixmap().scaledToHeight(self.scale[1])
+                    # self.image = self.image.scaledToHeight(self.scale[1])
+        except Exception as e:
+            print(f"Exception while resizing image: {e}")
 
     def readFromDict(self, settings: Dict[Any, Any]):
         """Read the settings from a Python dict."""
