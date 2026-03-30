@@ -1,7 +1,6 @@
 from collections.abc import Iterable
 from typing import Any, Dict, List, Optional
 
-from PyQt5 import QtGui
 from qtpy.QtCore import QByteArray, QEvent, QPoint, QSettings, QSize, Qt, Signal
 from qtpy.QtGui import (
     QContextMenuEvent,
