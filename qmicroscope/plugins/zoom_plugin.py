@@ -1,5 +1,6 @@
-from qtpy.QtWidgets import QAction, QWidget
-from qtpy.QtCore import QRect, Qt
+from qtpy import QtWidgets
+from qtpy.QtWidgets import QWidget
+from qtpy.QtCore import QPoint, QPointF, QRect, Qt
 
 from typing import Any, Dict, Optional
 
@@ -14,40 +15,74 @@ class ZoomPlugin(BaseImagePlugin):
         self.zoomRubberBand: "Optional[ResizableRubberBand]" = None
         self.startCrop = False
         self.parent = parent
-        self.crop = None
+        self.crop: "Optional[QRect]" = None
+        self._temp_start_viewport: "Optional[QPoint]" = None
+
+    def _parent_widget(self) -> QWidget:
+        if self.parent is None:
+            raise RuntimeError("ZoomPlugin parent is not set")
+        return self.parent
+
+    def _clamp_scene_point(self, point: QPoint) -> QPoint:
+        parent = self._parent_widget()
+        width = parent.image.width()
+        height = parent.image.height()
+        if width <= 0 or height <= 0:
+            return point
+        max_x = max(width - 1, 0)
+        max_y = max(height - 1, 0)
+        return QPoint(min(max(point.x(), 0), max_x), min(max(point.y(), 0), max_y))
+
+    def _viewport_to_scene(self, point: QPoint) -> QPoint:
+        parent = self._parent_widget()
+        mapped = parent.view.mapToScene(point)
+        return self._clamp_scene_point(mapped.toPoint())
+
+    def _scene_to_viewport(self, point: QPoint) -> QPoint:
+        parent = self._parent_widget()
+        return parent.view.mapFromScene(QPointF(point))
+
+    def _sync_rubberband_geometry(self):
+        if not self.zoomRubberBand or self.crop is None:
+            return
+        scene_rect = QRect(self.crop)
+        top_left = self._scene_to_viewport(scene_rect.topLeft())
+        bottom_right = self._scene_to_viewport(scene_rect.bottomRight())
+        viewport_rect = QRect(top_left, bottom_right).normalized()
+        if viewport_rect != self.zoomRubberBand.geometry():
+            previous_state = self.zoomRubberBand.blockSignals(True)
+            self.zoomRubberBand.setGeometry(viewport_rect)
+            self.zoomRubberBand.blockSignals(previous_state)
 
     def _crop_image(self) -> None:
         if self.zoomRubberBand:
-            width_scaling_factor = self.org_image_wd / self.parent.image.width()
-            ht_scaling_factor = self.org_image_ht / self.parent.image.height()
-
-            (
-                rect_x,
-                rect_y,
-                rect_width,
-                rect_ht,
-            ) = self.zoomRubberBand.geometry().getRect()
-            x = int(rect_x * width_scaling_factor)
-            y = int(rect_y * ht_scaling_factor)
-            wd = int(rect_width * width_scaling_factor)
-            ht = int(rect_ht * ht_scaling_factor)
-            self.crop = QRect(x, y, wd, ht)
+            rubberband_rect = self.zoomRubberBand.geometry()
+            rect_x = int(rubberband_rect.x())
+            rect_y = int(rubberband_rect.y())
+            rect_width = int(rubberband_rect.width())
+            rect_ht = int(rubberband_rect.height())
+            top_left = self._viewport_to_scene(QPoint(rect_x, rect_y))
+            bottom_right = self._viewport_to_scene(
+                QPoint(rect_x + rect_width, rect_y + rect_ht)
+            )
+            self.crop = QRect(top_left, bottom_right).normalized()
+            self._temp_start_viewport = None
             self.zoomRubberBand.hide()
-            # self.zoomRubberBand.destroy()
             self.zoomRubberBand = None
 
     def _start_crop(self):
         self.startCrop = True
-        if self.parent:
-            self.parent.setCursor(Qt.CrossCursor)
+        parent = self._parent_widget()
+        parent.setCursor(Qt.CursorShape.CrossCursor)
 
     def context_menu_entry(self):
+        parent = self._parent_widget()
         actions = []
-        self.crop_action = QAction("Zoom/Crop to selection", self.parent)
+        self.crop_action = QtWidgets.QAction("Zoom/Crop to selection", parent)
         self.crop_action.triggered.connect(self._start_crop)
         actions.append(self.crop_action)
-        if self.crop:
-            self.reset_crop_action = QAction("Reset Zoom/Crop", self.parent)
+        if self.crop is not None:
+            self.reset_crop_action = QtWidgets.QAction("Reset Zoom/Crop", parent)
             self.reset_crop_action.triggered.connect(self._reset_crop)
             actions.append(self.reset_crop_action)
         return actions
@@ -56,28 +91,37 @@ class ZoomPlugin(BaseImagePlugin):
         if (
             not self.zoomRubberBand
             and self.startCrop
-            and event.buttons() == Qt.LeftButton
+            and event.buttons() == Qt.MouseButton.LeftButton
         ):
-            self.zoomRubberBand = ResizableRubberBand(self.parent)
-            self.temp_start = event.pos()
+            parent = self._parent_widget()
+            self.zoomRubberBand = ResizableRubberBand(parent.view.viewport())
+            self._temp_start_viewport = event.pos()
+            self.zoomRubberBand.setGeometry(
+                QRect(self._temp_start_viewport, self._temp_start_viewport)
+            )
 
     def mouse_move_event(self, event):
-        if self.startCrop and event.buttons() == Qt.LeftButton:
-            self.zoomRubberBand.show()
-            self.zoomRubberBand.setGeometry(
-                QRect(self.temp_start, event.pos()).normalized()
-            )
+        if self.startCrop and event.buttons() == Qt.MouseButton.LeftButton:
+            if self._temp_start_viewport is None:
+                self._temp_start_viewport = event.pos()
+            if self.zoomRubberBand:
+                self.zoomRubberBand.show()
+                self.zoomRubberBand.setGeometry(
+                    QRect(self._temp_start_viewport, event.pos()).normalized()
+                )
 
     def mouse_release_event(self, event):
         if self.startCrop:
             self._crop_image()
             self.startCrop = False
-            self.parent.unsetCursor()
+            parent = self._parent_widget()
+            parent.unsetCursor()
 
     def update_image_data(self, image):
         self.org_image_ht = image.height()
         self.org_image_wd = image.width()
-        if self.crop:
+        self._sync_rubberband_geometry()
+        if self.crop is not None:
             image = image.copy(self.crop)
         return image
 

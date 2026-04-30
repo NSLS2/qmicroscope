@@ -1,10 +1,7 @@
-from qtpy.QtWidgets import QAction, QWidget
-from qtpy.QtCore import QRect, Qt
 from qtpy.QtGui import QMouseEvent
 
 from typing import Any, Dict, Optional
 import typing
-from qmicroscope.widgets.rubberband import ResizableRubberBand
 from qmicroscope.plugins.base_plugin import BasePlugin
 
 if typing.TYPE_CHECKING:
@@ -35,8 +32,11 @@ class MouseWheelCameraZoomPlugin(BasePlugin):
         return {"urls": self.urls}
 
     def mouse_wheel_event(self, event: QMouseEvent):
+        if not self.parent:
+            return
         if len(self.urls) > 1:
-            if event.angleDelta().y() > 0:
+            delta = event.angleDelta().y() if hasattr(event, "angleDelta") else 0
+            if delta > 0:
                 if self.current_url_index < len(self.urls) - 1:
                     self.current_url_index += 1
                     self.parent.videoThread.setUrl(self.urls[self.current_url_index])

@@ -1,10 +1,10 @@
 from collections import defaultdict
 from typing import TYPE_CHECKING, Any, Dict, Optional
 
-from qtpy.QtCore import QObject, QPoint, QRect, QRectF, Qt, Signal
+from qtpy import QtWidgets
+from qtpy.QtCore import QObject, QPoint, QPointF, QRect, QRectF, Qt, Signal
 from qtpy.QtGui import QColor, QMouseEvent, QPen
 from qtpy.QtWidgets import (
-    QAction,
     QColorDialog,
     QFormLayout,
     QGraphicsRectItem,
@@ -14,7 +14,7 @@ from qtpy.QtWidgets import (
     QSpinBox,
 )
 
-from qmicroscope.plugins.base_plugin import BasePlugin
+from qmicroscope.plugins.base_plugin import BaseImagePlugin
 from qmicroscope.widgets.color_button import ColorButton
 from qmicroscope.widgets.rubberband import ResizableRubberBand
 
@@ -34,7 +34,7 @@ class CellGraphicsItem(QGraphicsRectItem):
         self.cell_signal.clicked.emit(self)
 
 
-class SquareGridPlugin(BasePlugin):
+class SquareGridPlugin(BaseImagePlugin):
     """A plugin for displaying a grid on an image in a microscope application.
 
     The grid can be defined by drawing a rectangle on the image,
@@ -56,6 +56,7 @@ class SquareGridPlugin(BasePlugin):
         self.start: QPoint = QPoint(0, 0)
         self.end: QPoint = QPoint(1, 1)
         self.start_grid = False
+        self._draw_start_viewport: "Optional[QPoint]" = None
         self._grid_color = QColor.fromRgb(0, 255, 0)
         self._grid_items = []
         self._grid = None
@@ -64,6 +65,41 @@ class SquareGridPlugin(BasePlugin):
         self.selected_cell = None
         self.cell_signal = CellSignal()
         self.cell_signal.clicked.connect(self.handle_cell_clicked)
+
+    def _parent_widget(self) -> "Microscope":
+        if self.parent is None:
+            raise RuntimeError("SquareGridPlugin parent is not set")
+        return self.parent
+
+    def _clamp_scene_point(self, point: QPoint) -> QPoint:
+        parent = self._parent_widget()
+        width = parent.image.width()
+        height = parent.image.height()
+        if width <= 0 or height <= 0:
+            return point
+        max_x = max(width - 1, 0)
+        max_y = max(height - 1, 0)
+        return QPoint(min(max(point.x(), 0), max_x), min(max(point.y(), 0), max_y))
+
+    def _viewport_to_scene(self, point: QPoint) -> QPoint:
+        parent = self._parent_widget()
+        mapped = parent.view.mapToScene(point)
+        return self._clamp_scene_point(mapped.toPoint())
+
+    def _scene_to_viewport(self, point: QPoint) -> QPoint:
+        parent = self._parent_widget()
+        return parent.view.mapFromScene(QPointF(point))
+
+    def _sync_rubberband_geometry(self):
+        if not self.rubberBand:
+            return
+        top_left = self._scene_to_viewport(self.start)
+        bottom_right = self._scene_to_viewport(self.end)
+        rect = QRect(top_left, bottom_right).normalized()
+        if rect != self.rubberBand.geometry():
+            previous_state = self.rubberBand.blockSignals(True)
+            self.rubberBand.setGeometry(rect)
+            self.rubberBand.blockSignals(previous_state)
 
     @property
     def brush_color(self):
@@ -159,25 +195,35 @@ class SquareGridPlugin(BasePlugin):
         """
         self._grid_color = self.color_setting_widget.color()
         self._cell_size = self.cell_size_widget.value()
-
-        self.paintBoxes(self.parent.scene)
+        parent = self._parent_widget()
+        self.paintBoxes(parent.scene)
+        self._sync_rubberband_geometry()
 
     def start_plugin(self):
         """Starts the plugin."""
         if self.plugin_state["grid_defined"]:
-            self.paintBoxes(self.parent.scene)
+            parent = self._parent_widget()
+            self.paintBoxes(parent.scene)
             # self._grid.setVisible(not self.plugin_state["grid_hidden"])
             for item in self._grid_items:
                 item.setVisible(not self.plugin_state["grid_hidden"])
             self.create_rubberband()
-            self.rubberBand.setGeometry(QRect(self.start, self.end).normalized())
-            self.rubberBand.setVisible(not self.plugin_state["selector_hidden"])
+            self._sync_rubberband_geometry()
+            if self.rubberBand:
+                self.rubberBand.setVisible(not self.plugin_state["selector_hidden"])
 
     def stop_plugin(self):
         """Stops the plugin."""
-        self.remove_grid(self.parent.scene)
+        parent = self._parent_widget()
+        self.remove_grid(parent.scene)
         if self.rubberBand:
-            self.rubberBand.destroy()
+            self.rubberBand.deleteLater()
+            self.rubberBand = None
+
+    def update_image_data(self, image):
+        if self.plugin_state["grid_defined"] and self.rubberBand:
+            self._sync_rubberband_geometry()
+        return image
 
     def context_menu_entry(self):
         """Returns a list of QAction objects representing the plugin's context menu options.
@@ -187,15 +233,15 @@ class SquareGridPlugin(BasePlugin):
         """
         actions = []
         if self.plugin_state["grid_defined"]:
-            self.hide_show_action = QAction(
+            self.hide_show_action = QtWidgets.QAction(
                 "Selector Visible",
                 self.parent,
                 checkable=True,
-                checked=self.rubberBand.isVisible(),
+                checked=self.rubberBand.isVisible() if self.rubberBand else False,
             )
             self.hide_show_action.triggered.connect(self._toggle_selector)
             actions.append(self.hide_show_action)
-            self.hide_show_grid_action = QAction(
+            self.hide_show_grid_action = QtWidgets.QAction(
                 "Grid Visible",
                 self.parent,
                 checkable=True,
@@ -203,7 +249,7 @@ class SquareGridPlugin(BasePlugin):
             )
             self.hide_show_grid_action.triggered.connect(self._toggle_grid)
             actions.extend([self.hide_show_grid_action])
-        self.start_drawing_grid_action = QAction("Draw grid", self.parent)
+        self.start_drawing_grid_action = QtWidgets.QAction("Draw grid", self.parent)
         self.start_drawing_grid_action.triggered.connect(self._start_grid)
         actions.append(self.start_drawing_grid_action)
 
@@ -221,12 +267,13 @@ class SquareGridPlugin(BasePlugin):
             None.
         """
         if self.start_grid:
-            if self.rubberBand and event.buttons() == Qt.LeftButton:
+            if self.rubberBand and event.buttons() == Qt.MouseButton.LeftButton:
                 if self.rubberBand.isVisible():
+                    if self._draw_start_viewport is None:
+                        self._draw_start_viewport = event.pos()
                     self.rubberBand.setGeometry(
-                        QRect(self.start, event.pos()).normalized()
+                        QRect(self._draw_start_viewport, event.pos()).normalized()
                     )
-                    self.end = event.pos()
 
     def mouse_press_event(self, event: QMouseEvent):
         """
@@ -241,28 +288,37 @@ class SquareGridPlugin(BasePlugin):
             None.
         """
         if self.start_grid:
-            if event.buttons() == Qt.LeftButton:
-                self.start = event.pos()
+            if event.buttons() == Qt.MouseButton.LeftButton:
+                self._draw_start_viewport = event.pos()
 
             if not self.rubberBand:
                 self.create_rubberband()
+            if self.rubberBand and self._draw_start_viewport is not None:
+                self.rubberBand.setGeometry(
+                    QRect(self._draw_start_viewport, self._draw_start_viewport)
+                )
 
     def mouse_release_event(self, event: QMouseEvent):
         if self.start_grid:
-            self.paintBoxes(self.parent.scene)
+            if self.rubberBand:
+                rect = self.rubberBand.geometry()
+                self.update_grid(rect.topLeft(), rect.bottomRight())
             self.plugin_state["grid_defined"] = True
             self.start_grid = False
+            self._draw_start_viewport = None
 
     def _select_grid_color(self) -> None:
         """Shows a color picker dialog and sets the grid color to the selected color."""
         self._grid_color = QColorDialog.getColor()
         if self._grid:
-            self.paintBoxes(self.parent.scene)
+            parent = self._parent_widget()
+            self.paintBoxes(parent.scene)
 
     def _toggle_selector(self):
         """Toggles the visibility of the rectangle used to define the grid."""
-        self.rubberBand.toggle_selector()
-        self.plugin_state["selector_hidden"] = not self.rubberBand.isVisible()
+        if self.rubberBand:
+            self.rubberBand.toggle_selector()
+            self.plugin_state["selector_hidden"] = not self.rubberBand.isVisible()
 
     def _toggle_grid(self) -> None:
         """Toggles the visibility of the grid."""
@@ -286,9 +342,13 @@ class SquareGridPlugin(BasePlugin):
             start (QPoint): The new starting point.
             end (QPoint): The new ending point.
         """
-        self.start = start
-        self.end = end
-        self.paintBoxes(self.parent.scene)
+        parent = self._parent_widget()
+        scene_start = self._viewport_to_scene(start)
+        scene_end = self._viewport_to_scene(end)
+        rect = QRect(scene_start, scene_end).normalized()
+        self.start = rect.topLeft()
+        self.end = rect.bottomRight()
+        self.paintBoxes(parent.scene)
 
     def remove_grid(self, scene: QGraphicsScene):
         """
@@ -312,9 +372,10 @@ class SquareGridPlugin(BasePlugin):
         Returns:
             None.
         """
-        self.rubberBand = ResizableRubberBand(self.parent)
+        parent = self._parent_widget()
+        self.rubberBand = ResizableRubberBand(parent.view.viewport())
         self.rubberBand.box_modified.connect(self.update_grid)
-        self.rubberBand.setGeometry(QRect(self.start, self.end))
+        self._sync_rubberband_geometry()
         self.rubberBand.show()
 
     def paintBoxes(self, scene: QGraphicsScene) -> None:
