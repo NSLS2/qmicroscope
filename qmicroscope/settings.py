@@ -61,7 +61,7 @@ class Settings(QDialog):
         rowsCols.addWidget(self.cameraCols)
         rowsCols.addWidget(self.cameraRows)
         formLayout.addRow("Cameras:", rowsCols)
-        formLayout.addRow("Camera URL:", self.url)
+        formLayout.addRow("Camera Source:", self.url)
         formLayout.addRow("Image Scale:", self.scale)
         formLayout.addRow("Frame Rate:", self.fps)
         formLayout.addRow("X Divisions:", self.xDivs)

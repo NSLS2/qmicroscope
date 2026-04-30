@@ -1,4 +1,7 @@
 import time
+import os
+from urllib.parse import urlparse, unquote
+
 from qtpy.QtCore import Signal, QByteArray, QObject, QUrl, QThread, Qt, QRect, QRectF
 from qtpy.QtGui import QImage, QPainter, QBrush, QPen, QPixmap
 from qtpy.QtNetwork import QNetworkReply, QNetworkRequest, QNetworkAccessManager
@@ -9,6 +12,29 @@ from io import BytesIO
 from PIL import Image, ImageQt, ImageFile
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
+
+
+def local_file_path_from_source(source: str) -> "Optional[str]":
+    source = (source or "").strip()
+    if not source:
+        return None
+
+    parsed = urlparse(source)
+    scheme = parsed.scheme.lower()
+    if scheme in ("http", "https"):
+        return None
+
+    if scheme == "file":
+        raw_path = unquote(parsed.path or "")
+        if parsed.netloc and parsed.netloc != "localhost":
+            raw_path = f"//{parsed.netloc}{raw_path}"
+        return os.path.abspath(os.path.expanduser(raw_path))
+
+    is_windows_drive = len(scheme) == 1 and source[1:3] in (":\\", ":/")
+    if scheme and not is_windows_drive:
+        return None
+
+    return os.path.abspath(os.path.expanduser(source))
 
 
 class Downloader(QObject):
@@ -23,11 +49,22 @@ class Downloader(QObject):
         self.buffer = QByteArray()
         self.reply: Optional[QNetworkReply] = None
         self.isMjpegFeed = False
+        self.isLocalFile = False
+        self.localFilePath: "Optional[str]" = None
 
     def setUrl(self, url: str) -> None:
         self.url = url
         self.request.setUrl(QUrl(self.url))
-        if self.url.lower().endswith("mjpg") or self.url.lower().endswith("cgi"):
+        if self.reply:
+            self.reply.deleteLater()
+            self.reply = None
+        self.localFilePath = local_file_path_from_source(self.url)
+        self.isLocalFile = self.localFilePath is not None
+
+        if self.isLocalFile:
+            self.isMjpegFeed = False
+            self.mjpegCamera = None
+        elif self.url.lower().endswith("mjpg") or self.url.lower().endswith("cgi"):
             self.isMjpegFeed = True
             self.mjpegCamera = VideoCapture(self.url)
         else:
@@ -36,7 +73,11 @@ class Downloader(QObject):
 
     def downloadData(self) -> None:
         """Only request a new image if this is the first/last completed."""
-        if self.reply is None and not self.isMjpegFeed:
+        if self.isLocalFile and self.localFilePath:
+            qimage = QImage(self.localFilePath)
+            if not qimage.isNull():
+                self.imageReady.emit(qimage)
+        elif self.reply is None and not self.isMjpegFeed:
             self.reply = self.manager.get(self.request)
             self.reply.finished.connect(self.finished)
         elif self.isMjpegFeed:
@@ -63,7 +104,18 @@ class VideoThread(QThread):
 
     def camera_refresh(self):
         """Only request a new image if this is the first/last completed."""
-        if not self.isMjpegFeed:
+        if self.isLocalFile and self.localFilePath:
+            qimage = QImage(self.localFilePath)
+            if not qimage.isNull():
+                self._last_local_file_image = qimage
+                self.showing_error = False
+                self.imageReady.emit(qimage)
+            elif self._last_local_file_image is not None:
+                self.imageReady.emit(self._last_local_file_image)
+            else:
+                qimage = self.draw_message(f"Invalid image file: {self.localFilePath}")
+                self.imageReady.emit(qimage)
+        elif not self.isMjpegFeed:
             try:
                 data = urllib.request.urlopen(self.url, timeout=1000 / self.fps).read()
                 qimage = QImage.fromData(data)
@@ -104,7 +156,10 @@ class VideoThread(QThread):
         self.buffer = QByteArray()
         self.reply: Optional[QNetworkReply] = None
         self.isMjpegFeed = False
+        self.isLocalFile = False
+        self.localFilePath: "Optional[str]" = None
         self.acquire = True
+        self._last_local_file_image: "Optional[QImage]" = None
 
         self.error_qimage = QPixmap(400, 400).toImage()
         self.painter = QPainter(self.error_qimage)
@@ -116,7 +171,14 @@ class VideoThread(QThread):
     def setUrl(self, url: str) -> None:
         self.url = url
         self.request.setUrl(QUrl(self.url))
-        if self.url.lower().endswith("mjpg") or self.url.lower().endswith("cgi"):
+        self.localFilePath = local_file_path_from_source(self.url)
+        self.isLocalFile = self.localFilePath is not None
+        self._last_local_file_image = None
+
+        if self.isLocalFile:
+            self.isMjpegFeed = False
+            self.mjpegCamera = None
+        elif self.url.lower().endswith("mjpg") or self.url.lower().endswith("cgi"):
             self.isMjpegFeed = True
             self.mjpegCamera = VideoCapture(self.url)
         else:
