@@ -2,7 +2,7 @@ from typing import Any, Dict, List, Optional
 
 from qtpy.QtCore import QTimer, Qt
 from qtpy.QtGui import QColor, QMouseEvent, QPen
-from qtpy.QtWidgets import QFormLayout, QGraphicsEllipseItem, QGroupBox, QSpinBox
+from qtpy.QtWidgets import QFormLayout, QGraphicsEllipseItem, QGroupBox, QSpinBox, QApplication
 
 from qmicroscope.plugins.base_plugin import BasePlugin
 from qmicroscope.widgets.color_button import ColorButton
@@ -94,7 +94,10 @@ class BaseClickMarkerPlugin(BasePlugin):
         x, y = self._map_to_scene_px(event)
         self._pending_position = (x, y)
         self._pending_single_click = True
-        self._single_click_timer.start(max(1, int(parent.doubleClickInterval())))
+        app = QApplication.instance()
+        if app is not None:
+            interval = app.doubleClickInterval()
+        self._single_click_timer.start(max(1, int(interval)))
 
     def _flush_single_click(self) -> None:
         if self._pending_single_click and self._pending_position is not None:
