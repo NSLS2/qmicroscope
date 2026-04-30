@@ -102,6 +102,17 @@ class Downloader(QObject):
 class VideoThread(QThread):
     imageReady = Signal(object)
 
+    def _emit_cv_frame(self, currentFrame) -> None:
+        if currentFrame is None:
+            return
+        height, width = currentFrame.shape[:2]
+        image = QImage(currentFrame, width, height, 3 * width, QImage.Format_RGB888)
+        self.imageReady.emit(image.rgbSwapped())
+
+    def _reset_mjpeg_state(self) -> None:
+        self._latest_mjpeg_frame = None
+        self._next_mjpeg_emit_time = time.monotonic()
+
     def camera_refresh(self):
         """Only request a new image if this is the first/last completed."""
         if self.isLocalFile and self.localFilePath:
@@ -137,12 +148,7 @@ class VideoThread(QThread):
         elif self.isMjpegFeed and self.mjpegCamera:
             retVal, currentFrame = self.mjpegCamera.read()
             if currentFrame is not None:
-                height, width = currentFrame.shape[:2]
-                image = QImage(
-                    currentFrame, width, height, 3 * width, QImage.Format_RGB888
-                )
-                self.imageReady.emit(image.rgbSwapped())
-                # self.imageReady.emit(currentFrame)
+                self._emit_cv_frame(currentFrame)
 
     def __init__(self, *args, fps=5, url="", parent=None, **kwargs):
         # QThread.__init__(self, *args, **kwargs)
@@ -160,6 +166,9 @@ class VideoThread(QThread):
         self.localFilePath: "Optional[str]" = None
         self.acquire = True
         self._last_local_file_image: "Optional[QImage]" = None
+        self.mjpegCamera = None
+        self._latest_mjpeg_frame = None
+        self._next_mjpeg_emit_time = time.monotonic()
 
         self.error_qimage = QPixmap(400, 400).toImage()
         self.painter = QPainter(self.error_qimage)
@@ -169,6 +178,7 @@ class VideoThread(QThread):
         self.painter.setPen(QPen(Qt.black))
 
     def setUrl(self, url: str) -> None:
+        old_camera = self.mjpegCamera
         self.url = url
         self.request.setUrl(QUrl(self.url))
         self.localFilePath = local_file_path_from_source(self.url)
@@ -181,9 +191,13 @@ class VideoThread(QThread):
         elif self.url.lower().endswith("mjpg") or self.url.lower().endswith("cgi"):
             self.isMjpegFeed = True
             self.mjpegCamera = VideoCapture(self.url)
+            self._reset_mjpeg_state()
         else:
             self.isMjpegFeed = False
             self.mjpegCamera = None
+
+        if old_camera is not None and old_camera is not self.mjpegCamera:
+            old_camera.release()
 
     def setFPS(self, fps: int) -> None:
         self.fps = fps
@@ -193,8 +207,24 @@ class VideoThread(QThread):
 
     def run(self):
         while self.acquire:
-            self.camera_refresh()
-            self.msleep(int(1000 / self.fps))
+            if self.isMjpegFeed and self.mjpegCamera:
+                retVal, currentFrame = self.mjpegCamera.read()
+                if retVal and currentFrame is not None:
+                    self._latest_mjpeg_frame = currentFrame
+
+                now = time.monotonic()
+                interval = max(1.0 / max(self.fps, 1), 0.001)
+                if (
+                    self._latest_mjpeg_frame is not None
+                    and now >= self._next_mjpeg_emit_time
+                ):
+                    self._emit_cv_frame(self._latest_mjpeg_frame)
+                    self._next_mjpeg_emit_time = now + interval
+                elif not retVal:
+                    self.msleep(5)
+            else:
+                self.camera_refresh()
+                self.msleep(int(1000 / self.fps))
 
     def start(self):
         self.acquire = True
@@ -202,6 +232,9 @@ class VideoThread(QThread):
 
     def stop(self):
         self.acquire = False
+        if self.mjpegCamera is not None:
+            self.mjpegCamera.release()
+            self.mjpegCamera = None
 
     def draw_message(self, message: str) -> QImage:
         self.painter.drawText(QRectF(100, 100, 200, 100), message)
