@@ -29,6 +29,7 @@ class Microscope(QWidget):
     roiClicked: Signal = Signal(int, int)
     clicked_url: Signal = Signal(str)
     mouse_press_signal: Signal = Signal(object)
+    mouse_double_click_signal: Signal = Signal(object)
     mouse_move_signal: Signal = Signal(object)
     mouse_release_signal: Signal = Signal(object)
     mouse_wheel_signal: Signal = Signal(object)
@@ -80,6 +81,7 @@ class Microscope(QWidget):
 
         for plugin in self.plugins.values():
             self.mouse_press_signal.connect(plugin.mouse_press_event)
+            self.mouse_double_click_signal.connect(plugin.mouse_double_click_event)
             self.mouse_move_signal.connect(plugin.mouse_move_event)
             self.mouse_release_signal.connect(plugin.mouse_release_event)
             self.mouse_wheel_signal.connect(plugin.mouse_wheel_event)
@@ -118,6 +120,8 @@ class Microscope(QWidget):
         if obj is self.view.viewport():
             if event.type() == QEvent.MouseButtonPress:
                 self.mouse_press_event(event)
+            if event.type() == QEvent.MouseButtonDblClick:
+                self.mouse_double_click_event(event)
             if event.type() == QEvent.MouseButtonRelease:
                 self.mouse_release_event(event)
             if event.type() == QEvent.MouseMove:
@@ -150,6 +154,9 @@ class Microscope(QWidget):
             self.clicked_url.emit(self.settings_group)
 
         self.mouse_press_signal.emit(a0)
+
+    def mouse_double_click_event(self, a0: QMouseEvent):
+        self.mouse_double_click_signal.emit(a0)
 
     def mouse_move_event(self, a0: QMouseEvent):
         self.setFocus()

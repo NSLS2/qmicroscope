@@ -20,6 +20,9 @@ class SupportsBasePlugin(Protocol):
 
     def mouse_release_event(self, event: QMouseEvent):
         ...
+
+    def mouse_double_click_event(self, event: QMouseEvent):
+        ...
     
     def mouse_wheel_event(self, event: QMouseEvent):
         ...
@@ -101,6 +104,9 @@ class BasePlugin:
         pass
 
     def mouse_release_event(self, event: QMouseEvent):
+        pass
+
+    def mouse_double_click_event(self, event: QMouseEvent):
         pass
     
     def mouse_wheel_event(self, event: QMouseEvent):
