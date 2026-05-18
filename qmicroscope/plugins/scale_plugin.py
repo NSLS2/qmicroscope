@@ -62,6 +62,9 @@ class ScalePlugin(BaseImagePlugin):
         self._hor_line_measure_text.setFont(_font)
         self._vert_line_measure_text.setFont(_font)
 
+    def _default_pos(self) -> QPoint:
+        return QPoint(int(self.parent.view.width() - 30), int(self.parent.view.height() - 30))
+
     def _remove_scale(self, scene: QGraphicsScene):
         """Removes the scale bar from the given QGraphicsScene object."""
         for item in [
@@ -78,9 +81,7 @@ class ScalePlugin(BaseImagePlugin):
         """Paints the scale bar on the given QGraphicsScene object."""
         self._remove_scale(scene)
         if self._pos is None:
-            self._pos = QPoint(
-                int(self.parent.view.width() - 30), int(self.parent.view.height() - 30)
-            )
+            self._pos = self._default_pos()
 
         pen = QPen(self._color)
         start_point = self._pos
@@ -137,7 +138,11 @@ class ScalePlugin(BaseImagePlugin):
     def read_settings(self, settings: Dict[str, Any]):
         """Reads the plugin settings from the given dictionary object."""
         self._color = settings.get("color", self._color)
-        self._pos = settings.get("pos", self._pos)
+        pos = settings.get("pos", self._pos)
+        if isinstance(pos, QPoint):
+            self._pos = pos
+        elif self._pos is None:
+            self._pos = self._default_pos()
         self._horizontal_length = int(settings.get("hor_len", self._horizontal_length))
         self._vertical_length = int(settings.get("vert_len", self._vertical_length))
         self._visible = settings.get("visible", self._visible)
@@ -165,6 +170,8 @@ class ScalePlugin(BaseImagePlugin):
 
     def add_settings(self, parent=None) -> Optional[QGroupBox]:
         parent = parent if parent else self.parent
+        if not isinstance(self._pos, QPoint):
+            self._pos = self._default_pos()
         groupBox = QGroupBox(self.name, parent)
         layout = QFormLayout()
         self.color_setting_widget = ColorButton(parent=parent, color=self._color)
@@ -204,8 +211,7 @@ class ScalePlugin(BaseImagePlugin):
         self._color = self.color_setting_widget.color()
         self._horizontal_length = int(self.hor_len_setting_widget.value())
         self._vertical_length = int(self.vert_len_settings_widget.value())
-        self._pos.setX(self.x_pos_widget.value())
-        self._pos.setY(self.y_pos_widget.value())
+        self._pos = QPoint(self.x_pos_widget.value(), self.y_pos_widget.value())
         self._hor_line_measure = self.hor_measure_setting_widget.text()
         self._vert_line_measure = self.vert_measure_setting_widget.text()
         self._paint_scale(self.parent.scene)

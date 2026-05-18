@@ -261,6 +261,9 @@ class RecordPlugin(QObject):
     def mouse_move_event(self, event: QMouseEvent):
         pass
 
+    def mouse_double_click_event(self, event: QMouseEvent):
+        pass
+
     def mouse_press_event(self, event: QMouseEvent):
         pass
 
@@ -348,9 +351,10 @@ class RecordPlugin(QObject):
 
     def read_settings(self, settings: Dict[str, Any]):
         self.fps = int(settings.get("fps", 5))
-        self.filename = Path(
-            settings.get("path", Path.home()) / Path(settings.get("stem", "output"))
-        )
+        raw_path = settings.get("path")
+        base_path = Path(raw_path) if raw_path else Path.home()
+        stem = settings.get("stem") or "output"
+        self.filename = base_path / Path(stem)
         self.hours_per_file = int(settings.get("hours_per_file", 1))
         self.number_of_files = int(settings.get("number_of_files", 1))
         self.raw_image = convert_str_bool(settings.get("raw_image", True))
@@ -373,7 +377,7 @@ class RecordPlugin(QObject):
     def write_settings(self) -> Dict[str, Any]:
         settings = {}
         settings["fps"] = self.fps
-        settings["path"] = self.filename.parent
+        settings["path"] = str(self.filename.parent)
         settings["stem"] = self.filename.stem
         settings["hours_per_file"] = self.hours_per_file
         settings["number_of_files"] = self.number_of_files

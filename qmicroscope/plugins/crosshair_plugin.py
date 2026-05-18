@@ -54,6 +54,9 @@ class CrossHairPlugin(BaseImagePlugin):
         self._hor_line = None
         self._vert_line = None
 
+    def _default_pos(self) -> QPoint:
+        return QPoint(int(self.parent.view.width() / 2), int(self.parent.view.height() / 2))
+
     def read_settings(self, settings: Dict[str, Any]):
         """
         Read settings from a dictionary and set the attributes of the `CrossHairPlugin` object accordingly.
@@ -62,7 +65,11 @@ class CrossHairPlugin(BaseImagePlugin):
             settings (Dict[str, Any]): A dictionary containing the settings of the `CrossHairPlugin` object.
         """
         self._color = settings.get("color", self._color)
-        self._pos = settings.get("pos", self._pos)
+        pos = settings.get("pos", self._pos)
+        if isinstance(pos, QPoint):
+            self._pos = pos
+        elif not isinstance(self._pos, QPoint):
+            self._pos = self._default_pos()
         self._horizontal_length = int(settings.get("hor_len", self._horizontal_length))
         self._vertical_length = int(settings.get("vert_len", self._vertical_length))
         self._visible = settings.get("visible", self._visible)
@@ -127,11 +134,11 @@ class CrossHairPlugin(BaseImagePlugin):
             scene (QGraphicsScene): The `QGraphicsScene` object that the crosshair is on.
         """
         self._remove_crosshair(scene)
+        if not isinstance(self._pos, QPoint):
+            self._pos = self._default_pos()
         pen = QPen(self._color)
         if self._always_centered:
-            self._pos = QPoint(
-                int(self.parent.view.width() / 2), int(self.parent.view.height() / 2)
-            )
+            self._pos = self._default_pos()
 
         start_point = self._pos - QPoint(int(self._horizontal_length / 2), 0)
         end_point = self._pos + QPoint(int(self._horizontal_length / 2), 0)
@@ -211,6 +218,8 @@ class CrossHairPlugin(BaseImagePlugin):
             A `QGroupBox` object containing the settings of the `CrossHairPlugin` object.
         """
         parent = parent if parent else self.parent
+        if not isinstance(self._pos, QPoint):
+            self._pos = self._default_pos()
         groupBox = QGroupBox(self.name, parent)
         layout = QFormLayout()
         self.color_setting_widget = ColorButton(parent=parent, color=self._color)
@@ -250,6 +259,5 @@ class CrossHairPlugin(BaseImagePlugin):
         self._horizontal_length = int(self.hor_len_setting_widget.value())
         self._vertical_length = int(self.vert_len_settings_widget.value())
         self._always_centered = self.always_centered_checkbox.isChecked()
-        self._pos.setX(self.x_pos_widget.value())
-        self._pos.setY(self.y_pos_widget.value())
+        self._pos = QPoint(self.x_pos_widget.value(), self.y_pos_widget.value())
         self._paint_crosshair(self.parent.scene)
