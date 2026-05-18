@@ -164,4 +164,6 @@ cython_debug/
 _version.py
 
 help/
-release/
+release/# pixi environments
+.pixi/*
+!.pixi/config.toml
