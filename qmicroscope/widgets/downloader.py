@@ -13,6 +13,14 @@ from PIL import Image, ImageQt, ImageFile
 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
+_MJPEG_SUFFIXES = (".mjpg", ".mjpeg", ".cgi")
+
+
+def _is_mjpeg_url(url: str) -> bool:
+    """Check if a URL points to an MJPEG stream, ignoring query parameters."""
+    path = urlparse(url.lower()).path
+    return any(path.endswith(suffix) for suffix in _MJPEG_SUFFIXES)
+
 
 def local_file_path_from_source(source: str) -> "Optional[str]":
     source = (source or "").strip()
@@ -64,7 +72,7 @@ class Downloader(QObject):
         if self.isLocalFile:
             self.isMjpegFeed = False
             self.mjpegCamera = None
-        elif self.url.lower().endswith("mjpg") or self.url.lower().endswith("cgi"):
+        elif _is_mjpeg_url(self.url):
             self.isMjpegFeed = True
             self.mjpegCamera = VideoCapture(self.url)
         else:
@@ -188,7 +196,7 @@ class VideoThread(QThread):
         if self.isLocalFile:
             self.isMjpegFeed = False
             self.mjpegCamera = None
-        elif self.url.lower().endswith("mjpg") or self.url.lower().endswith("cgi"):
+        elif _is_mjpeg_url(self.url):
             self.isMjpegFeed = True
             self.mjpegCamera = VideoCapture(self.url)
             self._reset_mjpeg_state()
