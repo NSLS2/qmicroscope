@@ -214,25 +214,30 @@ class VideoThread(QThread):
         self.camera_object = camera_object
 
     def run(self):
-        while self.acquire:
-            if self.isMjpegFeed and self.mjpegCamera:
-                retVal, currentFrame = self.mjpegCamera.read()
-                if retVal and currentFrame is not None:
-                    self._latest_mjpeg_frame = currentFrame
+        try:
+            while self.acquire:
+                if self.isMjpegFeed and self.mjpegCamera:
+                    retVal, currentFrame = self.mjpegCamera.read()
+                    if retVal and currentFrame is not None:
+                        self._latest_mjpeg_frame = currentFrame
 
-                now = time.monotonic()
-                interval = max(1.0 / max(self.fps, 1), 0.001)
-                if (
-                    self._latest_mjpeg_frame is not None
-                    and now >= self._next_mjpeg_emit_time
-                ):
-                    self._emit_cv_frame(self._latest_mjpeg_frame)
-                    self._next_mjpeg_emit_time = now + interval
-                elif not retVal:
-                    self.msleep(5)
-            else:
-                self.camera_refresh()
-                self.msleep(int(1000 / self.fps))
+                    now = time.monotonic()
+                    interval = max(1.0 / max(self.fps, 1), 0.001)
+                    if (
+                        self._latest_mjpeg_frame is not None
+                        and now >= self._next_mjpeg_emit_time
+                    ):
+                        self._emit_cv_frame(self._latest_mjpeg_frame)
+                        self._next_mjpeg_emit_time = now + interval
+                    elif not retVal:
+                        self.msleep(5)
+                else:
+                    self.camera_refresh()
+                    self.msleep(int(1000 / self.fps))
+        finally:
+            if self.mjpegCamera is not None:
+                self.mjpegCamera.release()
+                self.mjpegCamera = None
 
     def start(self):
         self.acquire = True
@@ -240,9 +245,6 @@ class VideoThread(QThread):
 
     def stop(self):
         self.acquire = False
-        if self.mjpegCamera is not None:
-            self.mjpegCamera.release()
-            self.mjpegCamera = None
 
     def draw_message(self, message: str) -> QImage:
         self.painter.drawText(QRectF(100, 100, 200, 100), message)
