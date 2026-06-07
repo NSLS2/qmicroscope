@@ -1,5 +1,6 @@
 from collections.abc import Iterable
 from typing import Any, Dict, List, Optional
+import typing
 
 from qtpy.QtCore import QByteArray, QEvent, QPoint, QSettings, QSize, Qt, Signal
 from qtpy.QtGui import (
@@ -9,6 +10,7 @@ from qtpy.QtGui import (
     QMouseEvent,
     QPainter,
     QPixmap,
+    QtGui,
 )
 from qtpy.QtWidgets import (
     QAction,
@@ -91,6 +93,10 @@ class Microscope(QWidget):
         self.view.viewport().installEventFilter(self)
         self.view.installEventFilter(self)
 
+    def closeEvent(self, a0: typing.Optional[QtGui.QCloseEvent]) -> None:
+        self.acquire(False)
+        return super().closeEvent(a0)
+
     def updatedImageSize(self) -> None:
         if self.image.size() != self.minimumSize():
             self.setMinimumSize(self.image.size())
@@ -109,7 +115,7 @@ class Microscope(QWidget):
             for plugin in self.plugins.values():
                 plugin.stop_plugin()
             self.videoThread.stop()
-            self.videoThread.wait(500)
+            self.videoThread.wait()
 
     def stop_plugins(self):
         "For cleaning up threads and other processes"
