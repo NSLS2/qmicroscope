@@ -100,10 +100,12 @@ class Microscope(QWidget):
         return super().closeEvent(a0)
 
     def hideEvent(self, a0: typing.Optional[QHideEvent]) -> None:
-        if self.videoThread.isRunning():
-            self.videoThread.stop()
-            self.videoThread.wait()
+        self.acquire(False)
         return super().hideEvent(a0)
+
+    def showEvent(self, a0: typing.Optional[QShowEvent]) -> None:
+        super().showEvent(a0)
+        self.acquire(True)
 
     def updatedImageSize(self) -> None:
         if self.image.size() != self.minimumSize():
