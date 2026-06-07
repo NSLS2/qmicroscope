@@ -75,7 +75,7 @@ class Microscope(QWidget):
 
         self.url: str = "http://localhost:8080/output.jpg"
 
-        self.videoThread = VideoThread(fps=self.fps, url=self.url, parent=self)
+        self.videoThread = VideoThread(fps=self.fps, url=self.url, parent=None)
         self.videoThread.imageReady.connect(self.updateImageData)
 
         self.plugins: Dict[str, BasePlugin] = {}
