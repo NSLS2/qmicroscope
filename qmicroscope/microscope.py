@@ -16,6 +16,7 @@ from qtpy.QtGui import (
 )
 from qtpy.QtWidgets import (
     QAction,
+    QApplication,
     QGraphicsPixmapItem,
     QGraphicsScene,
     QGraphicsView,
@@ -47,6 +48,9 @@ class Microscope(QWidget):
         plugins: List[BasePlugin] = list(),
     ) -> None:
         super(Microscope, self).__init__(parent)
+        app = QApplication.instance()
+        if app:
+            app.aboutToQuit.connect(self._stop_thread)
         self.plugin_classes = plugins
         self.viewport = viewport
         self.setMinimumWidth(300)
@@ -99,9 +103,10 @@ class Microscope(QWidget):
         self.acquire(False)
         return super().closeEvent(a0)
 
-    def hideEvent(self, a0: typing.Optional[QHideEvent]) -> None:
-        self.acquire(False)
-        return super().hideEvent(a0)
+    def _stop_thread(self):
+        if self.videoThread.isRunning():
+            self.videoThread.stop()
+            self.videoThread.wait()
 
     def updatedImageSize(self) -> None:
         if self.image.size() != self.minimumSize():
