@@ -48,9 +48,6 @@ class Microscope(QWidget):
         plugins: List[BasePlugin] = list(),
     ) -> None:
         super(Microscope, self).__init__(parent)
-        app = QApplication.instance()
-        if app:
-            app.aboutToQuit.connect(self._stop_thread)
         self.plugin_classes = plugins
         self.viewport = viewport
         self.setMinimumWidth(300)
@@ -75,7 +72,7 @@ class Microscope(QWidget):
 
         self.url: str = "http://localhost:8080/output.jpg"
 
-        self.videoThread = VideoThread(fps=self.fps, url=self.url, parent=None)
+        self.videoThread = VideoThread(fps=self.fps, url=self.url, parent=self)
         self.videoThread.imageReady.connect(self.updateImageData)
 
         self.plugins: Dict[str, BasePlugin] = {}
@@ -103,10 +100,24 @@ class Microscope(QWidget):
         self.acquire(False)
         return super().closeEvent(a0)
 
-    def _stop_thread(self):
+    def hideEvent(self, event):
+        # Disconnect first so no queued imageReady reaches this widget
+        # after it's hidden/deleted. Stop the thread cleanly afterwards.
+        try:
+            self.videoThread.imageReady.disconnect(self.updateImageData)
+        except RuntimeError:
+            pass  # already disconnected
         if self.videoThread.isRunning():
             self.videoThread.stop()
             self.videoThread.wait()
+        super().hideEvent(event)
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Reconnect and restart when widget becomes visible again
+        if self.url and not self.videoThread.isRunning():
+            self.videoThread.imageReady.connect(self.updateImageData)
+            self.acquire(True)
 
     def updatedImageSize(self) -> None:
         if self.image.size() != self.minimumSize():
