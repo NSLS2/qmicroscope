@@ -10,7 +10,7 @@ from qtpy.QtGui import (
     QMouseEvent,
     QPainter,
     QPixmap,
-    QtGui,
+    QCloseEvent,
 )
 from qtpy.QtWidgets import (
     QAction,
@@ -93,7 +93,7 @@ class Microscope(QWidget):
         self.view.viewport().installEventFilter(self)
         self.view.installEventFilter(self)
 
-    def closeEvent(self, a0: typing.Optional[QtGui.QCloseEvent]) -> None:
+    def closeEvent(self, a0: typing.Optional[QCloseEvent]) -> None:
         self.acquire(False)
         return super().closeEvent(a0)
 
