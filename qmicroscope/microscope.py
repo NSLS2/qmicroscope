@@ -5,12 +5,14 @@ import typing
 from qtpy.QtCore import QByteArray, QEvent, QPoint, QSettings, QSize, Qt, Signal
 from qtpy.QtGui import (
     QContextMenuEvent,
+    QHideEvent,
     QImage,
     QKeyEvent,
     QMouseEvent,
     QPainter,
     QPixmap,
     QCloseEvent,
+    QShowEvent,
 )
 from qtpy.QtWidgets import (
     QAction,
@@ -96,6 +98,12 @@ class Microscope(QWidget):
     def closeEvent(self, a0: typing.Optional[QCloseEvent]) -> None:
         self.acquire(False)
         return super().closeEvent(a0)
+
+    def hideEvent(self, a0: typing.Optional[QHideEvent]) -> None:
+        if self.videoThread.isRunning():
+            self.videoThread.stop()
+            self.videoThread.wait()
+        return super().hideEvent(a0)
 
     def updatedImageSize(self) -> None:
         if self.image.size() != self.minimumSize():
