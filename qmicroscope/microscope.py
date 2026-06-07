@@ -103,10 +103,6 @@ class Microscope(QWidget):
         self.acquire(False)
         return super().hideEvent(a0)
 
-    def showEvent(self, a0: typing.Optional[QShowEvent]) -> None:
-        super().showEvent(a0)
-        self.acquire(True)
-
     def updatedImageSize(self) -> None:
         if self.image.size() != self.minimumSize():
             self.setMinimumSize(self.image.size())
