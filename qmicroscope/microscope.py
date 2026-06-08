@@ -100,9 +100,10 @@ class Microscope(QWidget):
         self.acquire(False)
         return super().closeEvent(a0)
 
-    def hideEvent(self, event):
+    def hideEvent(self, event: typing.Optional[QHideEvent]):
         # Disconnect first so no queued imageReady reaches this widget
         # after it's hidden/deleted. Stop the thread cleanly afterwards.
+        self.setUpdatesEnabled(False)
         try:
             self.videoThread.imageReady.disconnect(self.updateImageData)
         except RuntimeError:
@@ -112,8 +113,9 @@ class Microscope(QWidget):
             self.videoThread.wait()
         super().hideEvent(event)
 
-    def showEvent(self, event):
+    def showEvent(self, event: typing.Optional[QShowEvent]):
         super().showEvent(event)
+        self.setUpdatesEnabled(True)
         # Reconnect and restart when widget becomes visible again
         if self.url and not self.videoThread.isRunning():
             self.videoThread.imageReady.connect(self.updateImageData)
